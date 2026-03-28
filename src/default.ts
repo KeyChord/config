@@ -10,7 +10,7 @@ export type Options = {
   dts?: boolean;
 };
 
-export default function defineConfig(options: Options): UserConfig {
+export function defineConfig(options: Options): UserConfig {
   const plugins: any[] = [
     virtual({
       'virtual:empty': '',
