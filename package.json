@@ -1,0 +1,21 @@
+{
+  "name": "@keychord/config",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "exports": {
+    ".": {
+      "types": "./exports/default.d.ts",
+      "default": "./exports/default.js"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "vite-plus": "^0.1.14"
+  },
+  "dependencies": {
+    "@keychord/eslint-plugin-package-json": "^0.0.0",
+    "vite-plugin-dts": "^4.5.4",
+    "vite-plugin-static-copy": "^4.0.0",
+    "vite-plugin-virtual": "^0.5.0"
+  }
+}

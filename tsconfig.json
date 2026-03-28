@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "rootDir": "./src",
+    "types": ["node"]
+  },
+  "include": ["src"]
+}
