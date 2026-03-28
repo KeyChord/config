@@ -1,9 +1,6 @@
-import type { Plugin, UserConfig } from 'vite-plus'
 import path from 'path'
 import fs from 'fs'
-import { viteStaticCopy } from 'vite-plugin-static-copy'
 import virtual from 'vite-plugin-virtual';
-import dts from 'vite-plugin-dts';
 import { fileURLToPath } from 'url';
 
 export type Options = {
@@ -11,77 +8,55 @@ export type Options = {
   dts?: boolean;
 };
 
-export function defineConfig(options?: Options): UserConfig {
-  const plugins: any[] = [
-    virtual({
-      'virtual:empty': '',
-    }),
-    options?.dts && dts(),
-    {
-      name: "keychord",
-      config(config) {
-        const root = config.root ?? process.cwd();
-        const srcJsDirpath = path.join(root, 'src/js');
-        let input: string | Record<string, string> = {};
+// Needs to be named `config` or else vite-plus thinks it's its `defineConfig`
+export function config(options?: Options) {
+  const srcJsDirpath = path.join(process.cwd(), 'src/js');
+  let entry: string | Record<string, string> = {};
 
-        if (fs.existsSync(srcJsDirpath) && fs.statSync(srcJsDirpath).isDirectory()) {
-          for (const filename of fs.readdirSync(srcJsDirpath).filter((file) => file.endsWith(".ts"))) {
-            input[path.parse(filename).name] = path.join(srcJsDirpath, filename);
-          }
-        }
-
-        if (Object.keys(input).length === 0) {
-          input['noop'] = "virtual:empty";
-        }
-
-        return {
-          build: {
-            // Since we target a "server" runtime (LLRT)
-            ssr: true,
-            emptyOutDir: false,
-            outDir: "js",
-
-            rolldownOptions: {
-              input,
-
-              // We need to produce self-contained files
-              external: ["chord", ...(options?.vendor ?? [])],
-            },
-          },
-          ssr: {
-            noExternal: true,
-          },
-        };
-      },
-    } satisfies Plugin
-  ]
-
-  if (options?.vendor?.length) {
-    plugins.push(
-      viteStaticCopy({
-        /** @see https://github.com/sapphi-red/vite-plugin-static-copy/issues/216 */
-        environment: "ssr",
-        targets: options.vendor?.map((packageName) => ({
-          src: `node_modules/${packageName}/js`,
-          dest: ".",
-          rename: { stripBase: 1 },
-        })),
-      })
-    );
+  if (fs.existsSync(srcJsDirpath) && fs.statSync(srcJsDirpath).isDirectory()) {
+    for (const filename of fs.readdirSync(srcJsDirpath).filter((file) => file.endsWith(".ts"))) {
+      entry[path.parse(filename).name] = path.join(srcJsDirpath, filename);
+    }
   }
 
+  if (Object.keys(entry).length === 0) {
+    entry['noop'] = "virtual:empty";
+  }
+
+  const specifier = fileURLToPath(import.meta.resolve('@keychord/eslint-plugin-package-json'))
+  const eslintBinPath = path.join(fileURLToPath(import.meta.resolve('eslint/package.json')), '../bin/eslint.js');
+
   return {
-    plugins,
-    lint: {
-      jsPlugins: [import.meta.resolve('@keychord/eslint-plugin-package-json')],
-      overrides: [
-        {
-          files: ['**/package.json'],
-          rules: {
-            '@keychord/package-json/type': 'error'
-          }
+    plugins: [
+      virtual({
+        'virtual:empty': '',
+      }),
+    ] as any[],
+    pack: {
+      entry,
+      outDir: "js",
+      deps: {
+        neverBundle: [
+          "chord",
+          ...(options?.vendor ?? [])
+        ]
+      },
+    },
+    run: {
+      tasks: {
+        fix: {
+          // Sadly, oxlint does not support fixing JSON files (see https://oxc.rs/compatibility.html), and oxfmt does not (yet) support plugins, so we fall back to using ESLint
+          command: `
+            ${eslintBinPath} **/package.json \
+              --no-config-lookup \
+              --fix \
+              --plugin ${specifier} \
+              --rule '@keychord/package-json/type: error'
+          `,
         }
-      ]
-    }
+      }
+    },
+    // lint: {
+    // }
   }
 }
