@@ -1,12 +1,21 @@
 {
   "name": "@keychord/config",
   "version": "0.0.1",
+  "files": [
+    "src",
+    "exports"
+  ],
   "type": "module",
-  "packageManager": "pnpm@10.33.0",
-  "files": ["src", "exports"],
   "exports": {
     ".": "./src/default.ts",
     "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": "./exports/default.mjs",
+      "./package.json": "./package.json"
+    }
   },
   "dependencies": {
     "eslint": "^10.1.0",
@@ -19,11 +28,5 @@
     "@types/node": "^25.5.0",
     "vite-plus": "^0.1.14"
   },
-  "publishConfig": {
-    "exports": {
-      ".": "./exports/default.mjs",
-      "./package.json": "./package.json"
-    },
-    "access": "public"
-  }
+  "packageManager": "pnpm@10.33.0"
 }

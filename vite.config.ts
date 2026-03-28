@@ -2,11 +2,11 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   pack: {
-    entry: 'src/default.ts',
+    entry: "src/default.ts",
     dts: true,
-    outDir: 'exports',
+    outDir: "exports",
     exports: {
-      devExports: true
-    }
+      devExports: true,
+    },
   },
 });

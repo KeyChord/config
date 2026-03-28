@@ -1,7 +1,7 @@
-import path from 'path'
-import fs from 'fs'
-import virtual from 'vite-plugin-virtual';
-import { fileURLToPath } from 'url';
+import path from "path";
+import fs from "fs";
+import virtual from "vite-plugin-virtual";
+import type { UserConfig } from "vite-plus";
 
 export type Options = {
   vendor?: string[];
@@ -10,7 +10,7 @@ export type Options = {
 
 // Needs to be named `config` or else vite-plus thinks it's its `defineConfig`
 export function config(options?: Options) {
-  const srcJsDirpath = path.join(process.cwd(), 'src/js');
+  const srcJsDirpath = path.join(process.cwd(), "src/js");
   let entry: string | Record<string, string> = {};
 
   if (fs.existsSync(srcJsDirpath) && fs.statSync(srcJsDirpath).isDirectory()) {
@@ -20,43 +20,42 @@ export function config(options?: Options) {
   }
 
   if (Object.keys(entry).length === 0) {
-    entry['noop'] = "virtual:empty";
+    entry["noop"] = "virtual:empty";
   }
 
-  const specifier = fileURLToPath(import.meta.resolve('@keychord/eslint-plugin-package-json'))
-  const eslintBinPath = path.join(fileURLToPath(import.meta.resolve('eslint/package.json')), '../bin/eslint.js');
+  // const specifier = fileURLToPath(import.meta.resolve('@keychord/eslint-plugin-package-json'))
+  // const eslintBinPath = path.join(fileURLToPath(import.meta.resolve('eslint/package.json')), '../bin/eslint.js');
 
   return {
     plugins: [
       virtual({
-        'virtual:empty': '',
+        "virtual:empty": "",
       }),
     ] as any[],
     pack: {
       entry,
       outDir: "js",
+      dts: options?.dts,
+      fixedExtension: false,
       deps: {
-        neverBundle: [
-          "chord",
-          ...(options?.vendor ?? [])
-        ]
+        neverBundle: ["chord", ...(options?.vendor ?? [])],
       },
-    },
-    run: {
-      tasks: {
-        fix: {
-          // Sadly, oxlint does not support fixing JSON files (see https://oxc.rs/compatibility.html), and oxfmt does not (yet) support plugins, so we fall back to using ESLint
-          command: `
-            ${eslintBinPath} **/package.json \
-              --no-config-lookup \
-              --fix \
-              --plugin ${specifier} \
-              --rule '@keychord/package-json/type: error'
-          `,
-        }
-      }
-    },
+    } satisfies UserConfig["pack"],
+    // run: {
+    //   tasks: {
+    //     fix: {
+    //       // Sadly, oxlint does not support fixing JSON files (see https://oxc.rs/compatibility.html), and oxfmt does not (yet) support plugins, so we fall back to using ESLint
+    //       command: `
+    //         ${eslintBinPath} **/package.json \
+    //           --no-config-lookup \
+    //           --fix \
+    //           --plugin ${specifier} \
+    //           --rule '@keychord/package-json/type: error'
+    //       `,
+    //     }
+    //   }
+    // },
     // lint: {
     // }
-  }
+  };
 }
