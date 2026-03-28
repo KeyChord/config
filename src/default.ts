@@ -4,13 +4,14 @@ import fs from 'fs'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 import virtual from 'vite-plugin-virtual';
 import dts from 'vite-plugin-dts';
+import { fileURLToPath } from 'url';
 
 export type Options = {
   vendor?: string[];
   dts?: boolean;
 };
 
-export function defineConfig(options: Options): UserConfig {
+export function defineConfig(options?: Options): UserConfig {
   const plugins: any[] = [
     virtual({
       'virtual:empty': '',
@@ -72,12 +73,12 @@ export function defineConfig(options: Options): UserConfig {
   return {
     plugins,
     lint: {
-      jsPlugins: ['@keychord/eslint-plugin-package-json'],
+      jsPlugins: [import.meta.resolve('@keychord/eslint-plugin-package-json')],
       overrides: [
         {
           files: ['**/package.json'],
           rules: {
-            'keychord/proper-package-json': 'error'
+            '@keychord/package-json/type': 'error'
           }
         }
       ]
