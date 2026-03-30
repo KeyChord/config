@@ -38,8 +38,15 @@ export function config(options?: Options) {
       dts: options?.dts,
       fixedExtension: false,
       deps: {
+        alwaysBundle: [/.*/],
         neverBundle: ["chord", ...(options?.vendor ?? [])],
       },
+      copy: options?.vendor?.flatMap(packageName => {
+        return [
+          { from: `node_modules/${packageName}/js`, to: `js/${packageName}` },
+          { from: `node_modules/${packageName}/chords`, to: `chords/${packageName}` }
+        ]
+      })
     } satisfies UserConfig["pack"],
     // run: {
     //   tasks: {
