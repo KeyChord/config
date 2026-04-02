@@ -1,6 +1,6 @@
 {
   "name": "@keychord/config",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "files": [
     "src",
     "exports"
@@ -11,7 +11,7 @@
     "./package.json": "./package.json"
   },
   "publishConfig": {
-    "access": "public",
+    "access": "public"
   },
   "devDependencies": {
     "@keychord/eslint-plugin-package-json": "^0.0.0",
