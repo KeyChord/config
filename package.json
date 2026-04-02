@@ -7,11 +7,15 @@
   ],
   "type": "module",
   "exports": {
-    ".": "./exports/default.mjs",
+    ".": "./src/default.ts",
     "./package.json": "./package.json"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "exports": {
+      ".": "./exports/default.mjs",
+      "./package.json": "./package.json"
+    }
   },
   "devDependencies": {
     "@keychord/eslint-plugin-package-json": "^0.0.0",

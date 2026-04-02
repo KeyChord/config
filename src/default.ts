@@ -5,6 +5,7 @@ import type { UserConfig } from "vite-plus";
 export type Options = {
   vendor?: string[];
   dts?: boolean;
+  plugins?: any[]
 };
 
 // Needs to be named `config` or else vite-plus thinks it's its `defineConfig`
@@ -22,9 +23,12 @@ export function config(options?: Options) {
   // const eslintBinPath = path.join(fileURLToPath(import.meta.resolve('eslint/package.json')), '../bin/eslint.js');
 
   return {
+    plugins: options?.plugins,
     pack: [
       {
-        entry: 'package.json',
+        entry: {
+          'package.json': 'package.json',
+        },
         copy: options?.vendor?.flatMap(packageName => {
           return [
             { from: `node_modules/${packageName}/js`, to: `js/${packageName}` },
