@@ -1,6 +1,5 @@
 import path from "path";
 import fs from "fs";
-import virtual from "vite-plugin-virtual";
 import type { UserConfig } from "vite-plus";
 
 export type Options = {

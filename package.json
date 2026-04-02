@@ -17,10 +17,6 @@
       "./package.json": "./package.json"
     }
   },
-  "dependencies": {
-    "outdent": "^0.8.0",
-    "vite-plugin-virtual": "^0.5.0"
-  },
   "devDependencies": {
     "@keychord/eslint-plugin-package-json": "^0.0.0",
     "@tsconfig/vite-react": "^7.0.2",
