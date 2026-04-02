@@ -19,35 +19,36 @@ export function config(options?: Options) {
     }
   }
 
-  if (Object.keys(entry).length === 0) {
-    entry["noop"] = "virtual:empty";
-  }
-
   // const specifier = fileURLToPath(import.meta.resolve('@keychord/eslint-plugin-package-json'))
   // const eslintBinPath = path.join(fileURLToPath(import.meta.resolve('eslint/package.json')), '../bin/eslint.js');
 
   return {
-    plugins: [
-      virtual({
-        "virtual:empty": "",
-      }),
-    ] as any[],
-    pack: {
-      entry,
-      outDir: "js",
-      dts: options?.dts,
-      fixedExtension: false,
-      deps: {
-        alwaysBundle: [/.*/],
-        neverBundle: ["chord", ...(options?.vendor ?? [])],
+    pack: [
+      {
+        entry: 'package.json',
+        copy: options?.vendor?.flatMap(packageName => {
+          return [
+            { from: `node_modules/${packageName}/js`, to: `js/${packageName}` },
+            { from: `node_modules/${packageName}/chords`, to: `chords/${packageName}` }
+          ]
+        }),
+        outDir: 'js',
+        fixedExtension: false,
       },
-      copy: options?.vendor?.flatMap(packageName => {
-        return [
-          { from: `node_modules/${packageName}/js`, to: `js/${packageName}` },
-          { from: `node_modules/${packageName}/chords`, to: `chords/${packageName}` }
-        ]
-      })
-    } satisfies UserConfig["pack"],
+      ...Object.values(entry).map(entry => ({
+        entry,
+        clean: false,
+        outDir: 'js',
+        dts: options?.dts,
+        fixedExtension: false,
+        deps: {
+          // This is needed to remove the warning from console output, but tsdown types don't like for some reason so we cast it to never
+          onlyBundle: false as never,
+          alwaysBundle: [/.*/],
+          neverBundle: ["chord", ...(options?.vendor ?? [])],
+        },
+      }))
+    ] satisfies UserConfig["pack"],
     // run: {
     //   tasks: {
     //     fix: {
