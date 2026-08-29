@@ -1,21 +1,25 @@
 {
   "name": "@keychord/config",
-  "version": "0.0.6",
+  "version": "0.0.9",
   "files": [
-    "src",
     "exports"
   ],
   "type": "module",
   "exports": {
-    ".": "./src/default.ts",
+    ".": {
+      "types": "./exports/default.d.mts",
+      "default": "./exports/default.mjs"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
-    "access": "public",
-    "exports": {
-      ".": "./exports/default.mjs",
-      "./package.json": "./package.json"
-    }
+    "access": "public"
+  },
+  "scripts": {
+    "prepack": "vp pack && bun scripts/verify-package.ts"
+  },
+  "dependencies": {
+    "node-swift": "1.5.1"
   },
   "devDependencies": {
     "@keychord/eslint-plugin-package-json": "^0.0.0",
@@ -23,5 +27,8 @@
     "@types/node": "^25.5.0",
     "vite-plus": "^0.1.14"
   },
-  "packageManager": "pnpm@10.33.0"
+  "packageManager": "pnpm@10.33.0",
+  "bin": {
+    "keychord-compile": "./exports/compile.js"
+  }
 }
