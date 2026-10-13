@@ -1,0 +1,7 @@
+allowBuilds:
+  # Optional WebSocket acceleration; the JS implementation is sufficient.
+  bufferutil: false
+
+overrides:
+  # Temporary until the test runtime is published.
+  "@keychord/chordtest": "link:../chords/@keychord/chordtest"

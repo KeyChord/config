@@ -1,65 +1,62 @@
 /**
  * NodeSwift addon builds for Chord packages.
  *
- * Source layout:
- *   src/swift/<path>/<name>.swift   one addon per module directory
- *   src/swift/_shared/**            compiled into every addon
- *   src/swift/<path>/**             extra Swift sources for that addon
+ * Each package owns a real SwiftPM manifest at its root:
  *
- * Output mirrors the module path for each target triple:
- *   target/<triple>/<path>/<name>.node
+ *   Package.swift                   dependencies, language mode, platform, products
+ *   Sources/<Module>/**.swift       one directory per addon, named after its product
  *
- * A temporary SwiftPM package is generated under `.chord-native-build/`. NodeSwift supplies the
- * Node-API bridge and produces a `.node` file plus its shared `libNodeAPI.dylib` runtime. Keeping
- * NodeAPI dynamic is important when Chord loads multiple addons: statically linking it into every
- * addon registers duplicate Swift/Objective-C classes in one process.
+ * Every `.dynamic` library product is built as one NodeSwift addon. Output mirrors the
+ * product's output name for each target triple:
+ *
+ *   target/<triple>/<name>/<name>.node
+ *
+ * NodeSwift supplies the Node-API bridge and produces a `.node` file plus its shared
+ * `libNodeAPI.dylib` runtime. Keeping NodeAPI dynamic is important when Chord loads multiple
+ * addons: statically linking it into every addon registers duplicate Swift/Objective-C classes
+ * in one process. For the same reason product names must be unique across every chord package
+ * loaded together -- `assertUniqueModuleNames` enforces that at build time.
+ *
+ * The manifest is the single source of truth for everything SwiftPM understands. `NativeOptions`
+ * only carries build-orchestration concerns that have no SwiftPM equivalent (which triples to
+ * build, release vs debug, where to stage output).
  */
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { build as buildNodeSwift } from "node-swift";
 
 const NODE_API_VERSION = 8;
-const SWIFT_DIR = "src/swift";
 const NODE_SWIFT_RUNTIME_FILENAME = "libNodeAPI.dylib";
+const NODE_SWIFT_PACKAGE_IDENTITY = "node-swift";
+const MANIFEST_FILENAME = "Package.swift";
 
 export const NATIVE_TARGET_DIR = "target";
 export const NATIVE_MODULE_EXTENSION = "node";
 
-export type NativeTargetOptions = {
-  /** Frameworks not discovered through Swift's autolinking. */
-  frameworks?: string[];
-  /** Flags passed to Swift through NodeSwift. */
-  swiftFlags?: string[];
-  /** Flags passed to the linker through NodeSwift. */
-  linkerFlags?: string[];
-};
-
 export type NativeOptions = {
-  targets?: Record<string, NativeTargetOptions>;
   /** Rust-style target triples to build (default: the host triple). */
   triples?: string[];
   /** Release (default) or debug builds. */
   optimize?: boolean;
-  /** Minimum macOS version (default "13.0"). */
-  minimumMacOSVersion?: string;
-  /** Swift language mode used by generated packages (default "5"). */
-  languageMode?: "5" | "6";
-  /** Directory holding Swift sources, relative to the package root (default "src/swift"). */
-  swiftSourceDir?: string;
   /** Directory receiving built addons, relative to the package root (default "target"). */
   targetDir?: string;
-  /** Scratch directory for generated SwiftPM packages (default ".chord-native-build"). */
+  /** Scratch directory for SwiftPM build products (default "node_modules/.cache/chord/native"). */
   scratchDir?: string;
+  /**
+   * Skip the check that the manifest's pinned node-swift version matches the installed npm
+   * `node-swift`. Only useful while deliberately testing an unreleased bridge.
+   */
+  allowNodeSwiftVersionMismatch?: boolean;
 };
 
 export type NativeTarget = {
-  /** Addon/product name and output filename stem. */
+  /** Swift product/module name, as declared in Package.swift. */
+  module: string;
+  /** Addon filename stem and path below `target/<triple>/`, e.g. `menu`. */
   name: string;
-  /** Path below `target/<triple>/`, e.g. `menu`. */
-  outputRelpath: string;
-  swiftSources: string[];
 };
 
 /** Rust-style triple of the machine running the build. */
@@ -73,97 +70,148 @@ export function hostTriple(): string {
   return os.arch() === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu";
 }
 
-function pascal(text: string): string {
-  return text
-    .split(/[^A-Za-z0-9]+/)
-    .filter(Boolean)
-    .map((part) => part[0]!.toUpperCase() + part.slice(1))
-    .join("");
-}
-
-/** A deterministic, valid Swift module name for a package addon. */
-export function moduleName(packageName: string, target: string): string {
-  return `${pascal(packageName)}Native${pascal(target)}`;
-}
-
-/** `src/swift/menu/menu.swift` -> `menu`. */
-export function nativeOutputRelpath(
-  root: string,
-  swiftFile: string,
-  swiftSourceDir: string = SWIFT_DIR,
-): string {
-  const relDir = path.relative(path.join(root, swiftSourceDir), path.dirname(swiftFile));
-  return path.posix.join(...relDir.split(path.sep));
-}
-
 function isDir(value: string): boolean {
   return fs.existsSync(value) && fs.statSync(value).isDirectory();
 }
 
-function walk(dir: string, predicate: (file: string) => boolean): string[] {
-  if (!isDir(dir)) return [];
-  const files: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith(".")) continue;
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...walk(full, predicate));
-    else if (predicate(full)) files.push(full);
+export function manifestPath(root: string): string {
+  return path.join(root, MANIFEST_FILENAME);
+}
+
+export function hasNativeManifest(root: string): boolean {
+  return fs.existsSync(manifestPath(root));
+}
+
+/**
+ * Existing native source roots, used by pack/compile to decide whether to build.
+ * A package builds natives when it has a SwiftPM manifest.
+ */
+export function nativeSourceDirs(root: string): string[] {
+  if (!hasNativeManifest(root)) return [];
+  const sources = path.join(root, "Sources");
+  return isDir(sources) ? [sources, manifestPath(root)] : [manifestPath(root)];
+}
+
+type DumpedPackage = {
+  name: string;
+  products: { name: string; type: Record<string, unknown> }[];
+  dependencies: {
+    sourceControl?: {
+      identity: string;
+      requirement?: Record<string, unknown>;
+    }[];
+  }[];
+};
+
+/** Parse the package manifest with SwiftPM itself, so we never re-implement its semantics. */
+function dumpPackage(root: string): DumpedPackage {
+  let stdout: string;
+  try {
+    stdout = execFileSync("swift", ["package", "dump-package"], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error: any) {
+    const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+    throw new Error(`[chord-native] could not read ${manifestPath(root)}:\n${detail}`);
   }
-  return files.sort();
+  return JSON.parse(stdout);
 }
 
-/** Existing native source directories, used by pack/compile to decide whether to build. */
-export function nativeSourceDirs(root: string, swiftSourceDir: string = SWIFT_DIR): string[] {
-  const swiftDir = path.join(root, swiftSourceDir);
-  return isDir(swiftDir) ? [swiftDir] : [];
+/** `.dynamic` library products are the addons; anything else in the manifest is support code. */
+export function discoverNativeTargets(root: string): NativeTarget[] {
+  if (!hasNativeManifest(root)) return [];
+  const dumped = dumpPackage(root);
+  const targets = dumped.products
+    .filter((product) => {
+      const library = (product.type as any)?.library;
+      return Array.isArray(library) && library.includes("dynamic");
+    })
+    .map((product) => ({ module: product.name, name: addonName(product.name) }));
+
+  if (targets.length === 0) {
+    throw new Error(
+      `[chord-native] ${manifestPath(root)} declares no dynamic library products; ` +
+        `a NodeSwift addon must be declared as ` +
+        `.library(name: "…", type: .dynamic, targets: ["…"])`,
+    );
+  }
+  assertUniqueAddonNames(root, targets);
+  return targets.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function discoverNativeTargets(
-  root: string,
-  swiftSourceDir: string = SWIFT_DIR,
-): NativeTarget[] {
-  const swiftDir = path.join(root, swiftSourceDir);
-  if (!isDir(swiftDir)) return [];
+/**
+ * Addon filename stem for a Swift module. The module name is namespaced to stay globally unique
+ * (see the file header); the addon Chord loads keeps the short trailing name, so
+ * `KeychordChordsMenuNativeMenu` is written as `menu.node`.
+ */
+export function addonName(module: string): string {
+  const match = /Native([A-Z][A-Za-z0-9]*)$/.exec(module);
+  const stem = match ? match[1]! : module;
+  return stem[0]!.toLowerCase() + stem.slice(1);
+}
 
-  const shared = walk(path.join(swiftDir, "_shared"), (file) => file.endsWith(".swift"));
-  const targets: NativeTarget[] = [];
+function assertUniqueAddonNames(root: string, targets: NativeTarget[]) {
+  const seen = new Map<string, string>();
+  for (const target of targets) {
+    const existing = seen.get(target.name);
+    if (existing) {
+      throw new Error(
+        `[chord-native] ${manifestPath(root)}: products ${existing} and ${target.module} both ` +
+          `produce ${target.name}.${NATIVE_MODULE_EXTENSION}; give them distinct names`,
+      );
+    }
+    seen.set(target.name, target.module);
+  }
+}
 
-  function visit(dir: string) {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name.startsWith("_")) continue;
-      const moduleDir = path.join(dir, entry.name);
-      const entrySwift = path.join(moduleDir, `${entry.name}.swift`);
-      if (fs.existsSync(entrySwift)) {
-        targets.push({
-          name: entry.name,
-          outputRelpath: nativeOutputRelpath(root, entrySwift, swiftSourceDir),
-          swiftSources: [
-            entrySwift,
-            ...shared,
-            ...walk(
-              moduleDir,
-              (file) =>
-                file.endsWith(".swift") &&
-                file !== entrySwift &&
-                !path.basename(file).startsWith("_"),
-            ),
-          ],
-        });
+function installedNodeSwiftVersion(): string | undefined {
+  try {
+    const require = createRequire(import.meta.url);
+    return JSON.parse(fs.readFileSync(require.resolve("node-swift/package.json"), "utf8")).version;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The manifest pins node-swift by version while npm installs its own copy; nothing structural
+ * keeps the two in step, so compare them and fail loudly rather than build against a bridge that
+ * does not match the JS side.
+ */
+function assertNodeSwiftVersionMatches(root: string, dumped: DumpedPackage) {
+  const installed = installedNodeSwiftVersion();
+  if (!installed) return;
+
+  for (const dependency of dumped.dependencies) {
+    for (const source of dependency.sourceControl ?? []) {
+      if (source.identity !== NODE_SWIFT_PACKAGE_IDENTITY) continue;
+      const requirement = source.requirement ?? {};
+      const pinned = (requirement as any).exact?.[0];
+      if (pinned === undefined) {
+        // A range or branch requirement cannot be compared to a single installed version.
+        return;
       }
-      visit(moduleDir);
+      if (pinned !== installed) {
+        throw new Error(
+          `[chord-native] ${manifestPath(root)} pins node-swift ${pinned} but the installed ` +
+            `npm node-swift is ${installed}. Update the manifest (or package.json) so both ` +
+            `sides use the same bridge, or set allowNodeSwiftVersionMismatch to override.`,
+        );
+      }
+      return;
     }
   }
-
-  visit(swiftDir);
-  return targets.sort((a, b) => a.outputRelpath.localeCompare(b.outputRelpath));
 }
 
-function nodeSwiftRoot(): string {
-  const require = createRequire(import.meta.url);
-  return path.dirname(require.resolve("node-swift/package.json"));
-}
-
-function swiftTargetTriple(triple: string, minimumMacOSVersion: string): string {
+/**
+ * Map a Rust-style triple to the Swift one SwiftPM expects. The macOS version is deliberately
+ * omitted: the manifest's `platforms:` is the single source of truth for the deployment target,
+ * and repeating it here would let the two disagree.
+ */
+function swiftTargetTriple(triple: string): string {
   const [rawArch, vendor] = triple.split("-");
   if (vendor !== "apple") {
     throw new Error(
@@ -174,118 +222,11 @@ function swiftTargetTriple(triple: string, minimumMacOSVersion: string): string 
   if (arch !== "arm64" && arch !== "x86_64") {
     throw new Error(`[chord-native] unsupported architecture in ${triple}`);
   }
-  return `${arch}-apple-macosx${minimumMacOSVersion}`;
+  return `${arch}-apple-macosx`;
 }
 
-function swiftString(value: string): string {
-  return JSON.stringify(value);
-}
-
-type StagedTarget = { frameworks: string[] };
-
-function generatedPackageManifest(args: {
-  nodeSwiftPath: string;
-  minimumMacOSVersion: string;
-  languageMode: "5" | "6";
-  targets: Record<string, StagedTarget>;
-}): string {
-  const targets = Object.entries(args.targets).sort(([a], [b]) => a.localeCompare(b));
-  const products = targets
-    .map(
-      ([module]) =>
-        `        .library(name: ${swiftString(module)}, type: .dynamic, targets: [${swiftString(module)}]),`,
-    )
-    .join("\n");
-  const targetDeclarations = targets
-    .map(([module, options]) => {
-      const frameworks = options.frameworks
-        .map((framework) => `                .linkedFramework(${swiftString(framework)}),`)
-        .join("\n");
-      const linkerSettings = frameworks
-        ? `,\n            linkerSettings: [\n${frameworks}\n            ]`
-        : "";
-      return `        .target(
-            name: ${swiftString(module)},
-            dependencies: [
-                .product(name: "NodeAPI", package: "node-swift"),
-                .product(name: "NodeModuleSupport", package: "node-swift"),
-            ]${linkerSettings}
-        ),`;
-    })
-    .join("\n");
-
-  return `// swift-tools-version: 6.0
-import PackageDescription
-
-let package = Package(
-    name: "KeychordNativeAddons",
-    platforms: [.macOS(${swiftString(args.minimumMacOSVersion)})],
-    products: [
-${products}
-    ],
-    dependencies: [
-        .package(path: ${swiftString(args.nodeSwiftPath)}),
-    ],
-    targets: [
-${targetDeclarations}
-    ],
-    swiftLanguageModes: [.v${args.languageMode}]
-)
-`;
-}
-
-function stageSwiftPackage(
-  root: string,
-  packageDir: string,
-  module: string,
-  target: NativeTarget,
-  options: {
-    nodeSwiftPath: string;
-    minimumMacOSVersion: string;
-    languageMode: "5" | "6";
-    frameworks: string[];
-    swiftSourceDir: string;
-  },
-) {
-  const sourcesDir = path.join(packageDir, "Sources", module);
-  fs.rmSync(sourcesDir, { recursive: true, force: true });
-  fs.mkdirSync(sourcesDir, { recursive: true });
-
-  const swiftRoot = path.join(root, options.swiftSourceDir);
-  for (const source of target.swiftSources) {
-    const relative = path.relative(swiftRoot, source);
-    const destination = path.join(sourcesDir, relative);
-    fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.copyFileSync(source, destination);
-  }
-
-  const targetsFile = path.join(packageDir, ".targets.json");
-  let targets: Record<string, StagedTarget> = {};
-  try {
-    targets = JSON.parse(fs.readFileSync(targetsFile, "utf8"));
-  } catch {
-    // New or invalid registry: regenerate it from this target onward.
-  }
-  targets[module] = { frameworks: options.frameworks };
-  fs.writeFileSync(targetsFile, JSON.stringify(targets, null, 2));
-  fs.writeFileSync(
-    path.join(packageDir, "Package.swift"),
-    generatedPackageManifest({
-      nodeSwiftPath: options.nodeSwiftPath,
-      minimumMacOSVersion: options.minimumMacOSVersion,
-      languageMode: options.languageMode,
-      targets,
-    }),
-  );
-}
-
-function outputDirForTarget(
-  root: string,
-  targetDir: string,
-  triple: string,
-  outputRelpath: string,
-): string {
-  return path.join(root, targetDir, triple, ...outputRelpath.split("/"));
+function outputDirForTarget(root: string, targetDir: string, triple: string, name: string): string {
+  return path.join(root, targetDir, triple, name);
 }
 
 export type BuildNativeResult = {
@@ -302,60 +243,47 @@ export type BuildNativeContext = {
 };
 
 /**
- * Build every discovered NodeSwift addon for every requested target triple.
+ * Build every dynamic library product declared in the package manifest, for every requested
+ * target triple.
  *
- * This always builds. Deciding *whether* a build is necessary is the caller's
- * concern -- use a task runner (moon, make, ...) that hashes `swiftSourceDir`
- * as inputs and `targetDir` as outputs.
+ * This always builds. Deciding *whether* a build is necessary is the caller's concern -- use a
+ * task runner (moon, make, ...) that hashes `Package.swift` and `Sources/**` as inputs and
+ * `targetDir` as outputs.
  */
 export async function buildNative(
   root: string,
   options: NativeOptions = {},
-  context: BuildNativeContext = {},
+  _context: BuildNativeContext = {},
 ): Promise<BuildNativeResult> {
-  const swiftDir = options.swiftSourceDir ?? SWIFT_DIR;
-  const targetDir = options.targetDir ?? NATIVE_TARGET_DIR;
-  const targets = discoverNativeTargets(root, swiftDir);
-  if (targets.length === 0) return [];
+  if (!hasNativeManifest(root)) return [];
 
-  const pkgName = context.packageName ?? readPackageName(root) ?? path.basename(root);
+  const dumped = dumpPackage(root);
+  if (!options.allowNodeSwiftVersionMismatch) assertNodeSwiftVersionMatches(root, dumped);
+
+  const targets = discoverNativeTargets(root);
+  const targetDir = options.targetDir ?? NATIVE_TARGET_DIR;
   const triples = options.triples?.length ? options.triples : [hostTriple()];
-  const minimumMacOSVersion = options.minimumMacOSVersion ?? "13.0";
-  const languageMode = options.languageMode ?? "5";
   const mode = options.optimize === false ? "debug" : "release";
-  const scratchDir = path.resolve(root, options.scratchDir ?? ".chord-native-build");
-  const nodeSwiftPath = nodeSwiftRoot();
+  const scratchDir = path.resolve(root, options.scratchDir ?? "node_modules/.cache/chord/native");
   const results: BuildNativeResult = [];
 
   for (const triple of triples) {
-    const targetTriple = swiftTargetTriple(triple, minimumMacOSVersion);
+    const targetTriple = swiftTargetTriple(triple);
 
     for (const target of targets) {
-      const targetOptions = options.targets?.[target.name] ?? {};
-      const module = moduleName(pkgName, target.name);
-      const outDir = outputDirForTarget(root, targetDir, triple, target.outputRelpath);
-      const buildDir = path.join(scratchDir, triple, target.outputRelpath.replaceAll("/", "__"));
-      const packageDir = path.join(buildDir, "package");
+      const outDir = outputDirForTarget(root, targetDir, triple, target.name);
+      const buildDir = path.join(scratchDir, triple, target.name);
 
-      console.log(`[chord-native] building ${target.outputRelpath} as ${module} for ${triple}`);
-      fs.rmSync(buildDir, { recursive: true, force: true });
-      fs.mkdirSync(packageDir, { recursive: true });
-      stageSwiftPackage(root, packageDir, module, target, {
-        nodeSwiftPath,
-        minimumMacOSVersion,
-        languageMode,
-        frameworks: targetOptions.frameworks ?? [],
-        swiftSourceDir: swiftDir,
-      });
+      console.log(`[chord-native] building ${target.module} as ${target.name} for ${triple}`);
 
+      // SwiftPM builds the authored package directly and keeps incremental products in
+      // buildPath, without generating a package or staging a copy of the Swift sources.
       const builtAddon = await buildNodeSwift(mode, {
         buildPath: path.join(buildDir, "build", targetTriple, mode),
-        packagePath: packageDir,
-        product: module,
+        packagePath: root,
+        product: target.module,
         napi: NODE_API_VERSION,
         static: false,
-        swiftFlags: targetOptions.swiftFlags,
-        linkerFlags: targetOptions.linkerFlags,
         builder: { type: "swiftpm", triple: targetTriple },
       });
 
@@ -366,6 +294,7 @@ export async function buildNative(
           `[chord-native] NodeSwift did not produce ${NODE_SWIFT_RUNTIME_FILENAME} beside ${builtAddon}`,
         );
       }
+      fs.rmSync(staged, { recursive: true, force: true });
       fs.mkdirSync(staged, { recursive: true });
       fs.copyFileSync(builtAddon, path.join(staged, `${target.name}.${NATIVE_MODULE_EXTENSION}`));
       fs.copyFileSync(builtRuntime, path.join(staged, NODE_SWIFT_RUNTIME_FILENAME));
@@ -375,7 +304,7 @@ export async function buildNative(
       fs.mkdirSync(path.dirname(outDir), { recursive: true });
       fs.cpSync(staged, outDir, { recursive: true });
 
-      results.push({ target: target.outputRelpath, triple, module, outputDir: outDir });
+      results.push({ target: target.name, triple, module: target.module, outputDir: outDir });
     }
   }
 
@@ -383,12 +312,4 @@ export async function buildNative(
     `[chord-native] built ${results.length} addon(s) -> ${targetDir}/{${triples.join(",")}}/`,
   );
   return results;
-}
-
-function readPackageName(root: string): string | undefined {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).name;
-  } catch {
-    return undefined;
-  }
 }

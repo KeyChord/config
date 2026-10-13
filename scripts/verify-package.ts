@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 
 type ExportConditions = Record<string, string | ExportConditions>;
@@ -11,17 +10,17 @@ type PackageManifest = {
 
 const root = process.cwd();
 const manifestPath = path.join(root, "package.json");
-const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as PackageManifest;
+const manifest = (await Bun.file(manifestPath).json()) as PackageManifest;
 
 function fail(message: string): never {
   throw new Error(`[verify-package] ${message}`);
 }
 
-function requireFile(target: unknown, label: string): string {
+async function requireFile(target: unknown, label: string): Promise<string> {
   if (typeof target !== "string" || !target.startsWith("./")) {
     fail(`${label} must be a relative file path`);
   }
-  if (!fs.existsSync(path.join(root, target))) {
+  if (!(await Bun.file(path.join(root, target)).exists())) {
     fail(`${label} points to missing file ${target}`);
   }
   return target;
@@ -32,11 +31,10 @@ if (manifest.publishConfig?.exports !== undefined) {
 }
 
 const packageExport = manifest.exports?.["."];
-const conditions =
-  typeof packageExport === "string" ? { default: packageExport } : packageExport;
+const conditions = typeof packageExport === "string" ? { default: packageExport } : packageExport;
 if (!conditions) fail('missing exports["."]');
 
-const runtimeTarget = requireFile(
+const runtimeTarget = await requireFile(
   conditions.import ?? conditions.default,
   'exports["."].import/default',
 );
@@ -44,10 +42,10 @@ if (/\.[cm]?tsx?$/.test(runtimeTarget)) {
   fail(`runtime export must be compiled JavaScript, received ${runtimeTarget}`);
 }
 
-requireFile(conditions.types ?? manifest.types, 'exports["."].types');
+await requireFile(conditions.types ?? manifest.types, 'exports["."].types');
 
 for (const [name, target] of Object.entries(manifest.bin ?? {})) {
-  requireFile(target, `bin.${name}`);
+  await requireFile(target, `bin.${name}`);
 }
 
 console.log(`[verify-package] ${runtimeTarget} and its types are publish-safe`);

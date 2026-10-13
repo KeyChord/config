@@ -5,7 +5,7 @@
  *   - `js/`                        portable JavaScript runtime artifacts (via `vp pack`)
  *   - `target/<triple>/…/`        platform-specific NodeSwift addons (via `buildNative`)
  *
- * A chord package's authored source lives in `src/` (`src/js`, `src/swift`, …); `compile`
+ * A chord package's authored source lives in `src/js` and `Sources/` (SwiftPM); `compile`
  * turns it into the folders Chord actually loads. Native addons are built first so a JS handler
  * that imports one always sees an up-to-date module, then `vp pack` produces the JS bundle and
  * copies vendored dependencies. Run from a package directory (or `vpr -r compile` for the whole
@@ -16,10 +16,7 @@
  * configuration. Pass `--triple <triple>` (repeatable) to cross-build; otherwise the host triple
  * is built. `--skip-native` / `--skip-js` build only one half.
  */
-import { spawnSync } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { buildNative, nativeSourceDirs, type NativeOptions } from "./native.ts";
 
 type ResolvedConfig = {
@@ -56,8 +53,8 @@ function parseArgs(argv: string[]) {
 async function resolvePackageConfig(root: string): Promise<ResolvedConfig> {
   for (const name of ["vite.config.ts", "vite.config.js", "vite.config.mjs"]) {
     const file = path.join(root, name);
-    if (!fs.existsSync(file)) continue;
-    const module = await import(pathToFileURL(file).href);
+    if (!(await Bun.file(file).exists())) continue;
+    const module = await import(Bun.pathToFileURL(file).href);
     const value = await (typeof module.default === "function" ? module.default() : module.default);
     // vite-plus's defineConfig wraps the object; the config() options live under it either way.
     const options = value?.__keychordOptions ?? value?.options ?? value ?? {};
@@ -76,9 +73,7 @@ async function main() {
     if (triples.length > 0) native.triples = triples;
     const results = await buildNative(root, native, { vendor: config.vendor });
     for (const result of results) {
-      console.log(
-        `[compile] native ${result.module} -> ${path.relative(root, result.outputDir)}`,
-      );
+      console.log(`[compile] native ${result.module} -> ${path.relative(root, result.outputDir)}`);
     }
   }
 
@@ -87,15 +82,20 @@ async function main() {
     // them above so cross-build triples and --skip flags are honored, so tell pack to skip its
     // own pass rather than rebuild from scratch. Pack produces js/ and copies vendored
     // js/chords/target folders.
-    const pack = spawnSync("vp", ["pack"], {
+    const pack = Bun.spawnSync(["vp", "pack"], {
       cwd: root,
-      stdio: "inherit",
-      shell: false,
-      env: skipNative ? process.env : { ...process.env, CHORD_SKIP_NATIVE: "1" },
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+      env: {
+        ...process.env,
+        ...(!skipNative ? { CHORD_SKIP_NATIVE: "1" } : {}),
+        ...(triples.length ? { CHORD_NATIVE_TRIPLES: JSON.stringify(triples) } : {}),
+      },
     });
-    if (pack.status !== 0) {
+    if (pack.exitCode !== 0) {
       console.error("[compile] `vp pack` failed");
-      process.exit(pack.status ?? 1);
+      process.exit(pack.exitCode || 1);
     }
   }
 

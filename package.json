@@ -1,6 +1,9 @@
 {
   "name": "@keychord/config",
   "version": "0.0.9",
+  "bin": {
+    "keychord-compile": "./exports/compile.js"
+  },
   "files": [
     "exports"
   ],
@@ -19,16 +22,26 @@
     "prepack": "vp pack && bun scripts/verify-package.ts"
   },
   "dependencies": {
+    "@keychord/chordtest": "^0.0.0",
     "node-swift": "1.5.1"
   },
   "devDependencies": {
     "@keychord/eslint-plugin-package-json": "^0.0.0",
     "@tsconfig/vite-react": "^7.0.2",
+    "@types/bun": "^1.4.2",
     "@types/node": "^25.5.0",
-    "vite-plus": "^0.1.14"
+    "vite-plus": "0.1.15"
   },
-  "packageManager": "pnpm@10.33.0",
-  "bin": {
-    "keychord-compile": "./exports/compile.js"
+  "packageManager": "pnpm@12.11.2",
+  "inlinedDependencies": {
+    "@oxc-project/types": "0.122.0",
+    "@types/chai": "5.2.3",
+    "@types/deep-eql": "4.0.2",
+    "@voidzero-dev/vite-plus-core": "0.1.15",
+    "@voidzero-dev/vite-plus-test": "0.1.15",
+    "assertion-error": "2.0.1",
+    "oxfmt": "0.43.0",
+    "oxlint": "1.58.0",
+    "vite-plus": "0.1.15"
   }
 }

@@ -22,7 +22,7 @@ export default defineConfig({
         },
       },
       deps: {
-        neverBundle: ["node-swift"],
+        neverBundle: ["node-swift", "@keychord/chordtest"],
       },
     },
     {
