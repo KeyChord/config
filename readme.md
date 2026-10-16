@@ -100,24 +100,42 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/kabiroberai/node-swift.git", exact: "1.5.1"),
-        .package(path: "node_modules/@keychord/config/swift/AXorcistRuntime"),
+        .package(url: "https://github.com/KeyChord/config.git", exact: "0.0.10"),
     ],
     targets: [
         .target(name: "KeychordChordsMenuNativeMenu", dependencies: [
             .product(name: "NodeAPI", package: "node-swift"),
             .product(name: "NodeModuleSupport", package: "node-swift"),
-            .product(name: "AXorcistRuntime", package: "AXorcistRuntime"),
+            .product(name: "AXorcistRuntime", package: "config"),
+            .product(name: "ChordNodeSupport", package: "config"),
         ]),
     ],
     swiftLanguageModes: [.v6]
 )
 ```
 
-Accessibility targets import `AXorcistRuntime`, which re-exports AXorcist. The shared dynamic
-library includes AXorcist and swift-log so loading several addons registers their classes only
-once. Its manifest pins both dependencies consistently across packages. Install npm dependencies
-before building Swift so the local runtime package can be resolved. AXorcist requires macOS 14+
-and Swift 6.2+.
+### Shared Swift libraries
+
+This repository is also a Swift package. Its root `Package.swift` publishes the Swift code that
+chord packages share, so they declare it as a normal SwiftPM dependency instead of copying source
+files. Release tags match the npm version.
+
+- `AXorcistRuntime` re-exports AXorcist. It is a dynamic library that includes AXorcist and
+  swift-log, so loading several add-ons registers their classes only once. AXorcist requires
+  macOS 14+ and Swift 6.2+.
+- `ChordNodeSupport` provides `mainActorPromise`, which runs work on the main actor and settles a
+  JS promise. Use it instead of NodeSwift's `async` functions: since the Swift 6.1 runtime,
+  NodeSwift aborts when a task hops back from `MainActor` while several add-ons are loaded.
+
+Every add-on loaded into one Chord process, including vendored ones, must use the same release:
+dyld loads one `libAXorcistRuntime.dylib` for all of them. Pin it with `exact:` and bump packages
+together. Its own dependencies are pinned to released versions, because SwiftPM rejects a
+version-pinned package whose dependencies are pinned by branch, revision or path. The same rule
+applies to any chord package that other packages depend on.
+
+To build against an unreleased checkout, temporarily declare
+`.package(path: "node_modules/@keychord/config")` instead. Both forms have the identity `config`,
+so product references stay the same.
 
 The target imports `NodeAPI` and declares its exports with `#NodeModule`. Handlers load the addon
 with a normal relative import:

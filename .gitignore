@@ -2,3 +2,7 @@ pnpm-lock.yaml
 .DS_Store
 node_modules
 exports
+# SwiftPM output from building the root Package.swift directly.
+.build
+.swiftpm
+/Package.resolved
