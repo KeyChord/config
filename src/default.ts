@@ -2,7 +2,6 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "node:url";
 import type { Plugin, UserConfig } from "vite-plus";
-import { chordTestRuntime } from "@keychord/chordtest/vitest";
 import { NATIVE_TARGET_DIR, buildNative, nativeSourceDirs, type NativeOptions } from "./native.ts";
 import { nativeAddonPlugin } from "./native-plugin.ts";
 import { packageChordsPlugin } from "./chords-plugin.ts";
@@ -48,7 +47,6 @@ export type Options = {
 
 // Needs to be named `config` or else vite-plus thinks it's its `defineConfig`
 export function config(options?: Options) {
-  const runtime = chordTestRuntime();
   const srcJsDirpath = path.join(process.cwd(), "src/js");
   let entry: string | Record<string, string> = {};
 
@@ -96,8 +94,7 @@ export function config(options?: Options) {
   const watching = process.argv.includes("--watch") || process.argv.includes("-w");
 
   return {
-    ...runtime,
-    plugins: [...runtime.plugins, ...(options?.plugins ?? [])],
+    plugins: [...(options?.plugins ?? [])],
     pack: [
       {
         entry: {

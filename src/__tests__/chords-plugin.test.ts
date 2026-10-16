@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, expect, test } from "vite-plus/test";
+import { afterEach, expect, test } from "bun:test";
 import { build } from "vite-plus/pack";
 import { packageChordsPlugin } from "../chords-plugin.ts";
 

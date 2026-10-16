@@ -20,10 +20,10 @@
     "access": "public"
   },
   "scripts": {
-    "prepack": "vp pack && bun scripts/verify-package.ts"
+    "prepack": "vp pack && bun scripts/verify-package.ts",
+    "test": "bun test --isolate"
   },
   "dependencies": {
-    "@keychord/chordtest": "^0.0.0",
     "node-swift": "1.5.1",
     "smol-toml": "^1.9.1"
   },

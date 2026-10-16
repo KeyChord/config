@@ -8,10 +8,10 @@ import { config } from "@keychord/config";
 export default config();
 ```
 
-The default config includes the Chord test runtime for `vp test`: the built-in `chord` module
-is preloaded with configurable mocks, and handler modules receive package-bound
-`import.meta.chord` helpers. VM tests (`*.vm.test.ts`) are excluded from Vitest.
-Custom plugins are added alongside the runtime plugin; production bundles keep the real host API.
+The config only builds packages. Chord runs handlers under Bun, so packages test with `bun test`
+and the `@keychord/chordtest` preload (configured in their `bunfig.toml`), which provides the
+mockable `chord` module and package-bound `import.meta.chord` helpers. Production bundles keep the
+real host API.
 
 Pass options when the package needs additional build settings:
 
@@ -24,10 +24,9 @@ export default config({
 });
 ```
 
-Until the runtime and updated config are published, `pnpm-workspace.yaml` links this package's
-`@keychord/chordtest` dependency to `../chords/@keychord/chordtest`. The chords workspace links
-`@keychord/config` back to this checkout. Run `vp install` in both checkouts and `vp pack` here
-after changing the config, because consumers load its built `exports/` entry.
+The chords workspace links `@keychord/config` to this checkout. Run `vp pack` here after changing
+the config, because consumers load its built `exports/` entry. Run this package's own tests with
+`vp run test` (`bun test`).
 
 ## `js/package.json.js`
 

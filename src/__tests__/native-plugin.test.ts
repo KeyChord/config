@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { afterEach, expect, test } from "vite-plus/test";
+import { afterEach, expect, test } from "bun:test";
 import { build } from "vite-plus/pack";
 import { nativeAddonPlugin } from "../native-plugin.ts";
 
