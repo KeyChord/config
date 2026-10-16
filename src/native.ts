@@ -12,7 +12,8 @@
  *   target/<triple>/<name>/<name>.node
  *
  * NodeSwift supplies the Node-API bridge and produces a `.node` file plus its shared
- * `libNodeAPI.dylib` runtime. Keeping NodeAPI dynamic is important when Chord loads multiple
+ * `libNodeAPI.dylib` runtime. AXorcist users also ship the shared `libAXorcistRuntime.dylib`.
+ * Keeping these libraries dynamic is important when Chord loads multiple
  * addons: statically linking it into every addon registers duplicate Swift/Objective-C classes
  * in one process. For the same reason product names must be unique across every chord package
  * loaded together -- `assertUniqueModuleNames` enforces that at build time.
@@ -298,6 +299,12 @@ export async function buildNative(
       fs.mkdirSync(staged, { recursive: true });
       fs.copyFileSync(builtAddon, path.join(staged, `${target.name}.${NATIVE_MODULE_EXTENSION}`));
       fs.copyFileSync(builtRuntime, path.join(staged, NODE_SWIFT_RUNTIME_FILENAME));
+      const accessibilityRuntime = "libAXorcistRuntime.dylib";
+      const builtAccessibility = path.join(path.dirname(builtAddon), accessibilityRuntime);
+      if (fs.existsSync(builtAccessibility)) {
+        fs.copyFileSync(builtAccessibility, path.join(staged, accessibilityRuntime));
+        fs.chmodSync(path.join(staged, accessibilityRuntime), 0o755);
+      }
       fs.chmodSync(path.join(staged, `${target.name}.${NATIVE_MODULE_EXTENSION}`), 0o755);
       fs.chmodSync(path.join(staged, NODE_SWIFT_RUNTIME_FILENAME), 0o755);
       fs.rmSync(outDir, { recursive: true, force: true });

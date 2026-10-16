@@ -61,11 +61,17 @@ export function nativeAddonPlugin(options: NativeAddonPluginOptions = {}): Plugi
           fileName: `${outputDirectory}/${name}-${hash}.node`,
           source: content,
         });
-        this.emitFile({
-          type: "asset",
-          fileName: `${outputDirectory}/${RUNTIME_FILENAME}`,
-          source: fs.readFileSync(runtime),
-        });
+        for (const filename of fs
+          .readdirSync(directory)
+          .filter((file) => file.endsWith(".dylib"))) {
+          const file = path.join(directory, filename);
+          this.addWatchFile(file);
+          this.emitFile({
+            type: "asset",
+            fileName: `${outputDirectory}/${filename}`,
+            source: fs.readFileSync(file),
+          });
+        }
         urls.push(`${JSON.stringify(runtimeTarget)}: import.meta.ROLLUP_FILE_URL_${reference}`);
       }
 

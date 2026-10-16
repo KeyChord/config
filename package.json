@@ -5,7 +5,8 @@
     "keychord-compile": "./exports/compile.js"
   },
   "files": [
-    "exports"
+    "exports",
+    "swift"
   ],
   "type": "module",
   "exports": {
@@ -23,7 +24,8 @@
   },
   "dependencies": {
     "@keychord/chordtest": "^0.0.0",
-    "node-swift": "1.5.1"
+    "node-swift": "1.5.1",
+    "smol-toml": "^1.9.1"
   },
   "devDependencies": {
     "@keychord/eslint-plugin-package-json": "^0.0.0",

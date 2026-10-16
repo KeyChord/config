@@ -29,6 +29,26 @@ Until the runtime and updated config are published, `pnpm-workspace.yaml` links 
 `@keychord/config` back to this checkout. Run `vp install` in both checkouts and `vp pack` here
 after changing the config, because consumers load its built `exports/` entry.
 
+## `js/package.json.js`
+
+`vp pack` bundles the package's `package.json` into `js/package.json.js` with an added `chords`
+property: the `chords/` directory as nested objects, one per folder, with each `.toml` file parsed
+under its filename. It is exported both on the default export and as a named `chords` export:
+
+```ts
+import pkg, { chords } from "@keychord/chords-chromium/js/package.json.js";
+
+chords.com.google.Chrome["macos.toml"].name; // "Google Chrome"
+chords["base.toml"].chords; // the shared shortcut table
+```
+
+Leaves keep their `.toml` filename, so a key path matches the `file` paths used by `import`, and a
+file never collides with a sibling folder. Vendored packages appear where `vendor` copies them
+(`chords["@keychord"]["chords-menu"].chords["macos.toml"]`), read from `node_modules` because the
+copy runs after bundling. The source `package.json` is never modified. Invalid TOML fails the build.
+
+`packageChordsPlugin({ root, vendor })` is exported for custom builds.
+
 ## Compiling a package
 
 `vpr compile` (i.e. `vp run compile`) builds every distributable folder of a chord package in one step:
@@ -58,7 +78,7 @@ Node-API add-on:
 
 ```text
 Sources/KeychordChordsMenuNativeMenu/menu.swift
-  -> target/aarch64-apple-darwin/menu/{menu.node,libNodeAPI.dylib}
+  -> target/aarch64-apple-darwin/menu/{menu.node,libNodeAPI.dylib,libAXorcistRuntime.dylib}
 ```
 
 The add-on filename is the product name with its package prefix stripped, so the long, globally
@@ -80,19 +100,24 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/kabiroberai/node-swift.git", exact: "1.5.1"),
-        .package(url: "https://github.com/openclaw/AXorcist.git",
-                 revision: "aa07d72fbb1861b56f5833b4cff8d9101c8dfbb3"),
+        .package(path: "node_modules/@keychord/config/swift/AXorcistRuntime"),
     ],
     targets: [
         .target(name: "KeychordChordsMenuNativeMenu", dependencies: [
             .product(name: "NodeAPI", package: "node-swift"),
             .product(name: "NodeModuleSupport", package: "node-swift"),
-            .product(name: "AXorcist", package: "AXorcist"),
+            .product(name: "AXorcistRuntime", package: "AXorcistRuntime"),
         ]),
     ],
     swiftLanguageModes: [.v6]
 )
 ```
+
+Accessibility targets import `AXorcistRuntime`, which re-exports AXorcist. The shared dynamic
+library includes AXorcist and swift-log so loading several addons registers their classes only
+once. Its manifest pins both dependencies consistently across packages. Install npm dependencies
+before building Swift so the local runtime package can be resolved. AXorcist requires macOS 14+
+and Swift 6.2+.
 
 The target imports `NodeAPI` and declares its exports with `#NodeModule`. Handlers load the addon
 with a normal relative import:
@@ -124,7 +149,7 @@ function openAddon(): MenuAddon {
 `config()` automatically installs its native-addon plugin in each handler's `pack.plugins`.
 The missing source-side `./menu.node` resolves to `target/<triple>/menu/menu.node`; no alias,
 JavaScript shim, or `import.meta.chord.resolveNative` call is needed. Real relative files keep
-their normal resolution. The plugin emits the addon and `libNodeAPI.dylib` under
+their normal resolution. The plugin emits the addon and its shared runtime libraries under
 `js/native/<triple>/menu/`, with a content hash in the addon's filename. Loading remains lazy
 when the require is inside a function.
 Published chord packages do not need an npm dependency on NodeSwift.

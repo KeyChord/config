@@ -5,6 +5,7 @@ import type { Plugin, UserConfig } from "vite-plus";
 import { chordTestRuntime } from "@keychord/chordtest/vitest";
 import { NATIVE_TARGET_DIR, buildNative, nativeSourceDirs, type NativeOptions } from "./native.ts";
 import { nativeAddonPlugin } from "./native-plugin.ts";
+import { packageChordsPlugin } from "./chords-plugin.ts";
 
 // Path to the `compile` task script, next to this module. In development that is `compile.ts`
 // (source); in a published install it is the bundled `compile.mjs`. Resolve to whichever exists.
@@ -30,6 +31,8 @@ export {
 export type { NativeOptions, NativeTarget } from "./native.ts";
 export { nativeAddonPlugin } from "./native-plugin.ts";
 export type { NativeAddonPluginOptions } from "./native-plugin.ts";
+export { packageChordsPlugin } from "./chords-plugin.ts";
+export type { ChordsTree, PackageChordsPluginOptions } from "./chords-plugin.ts";
 
 export type Options = {
   vendor?: string[];
@@ -100,6 +103,8 @@ export function config(options?: Options) {
         entry: {
           "package.json": "package.json",
         },
+        // `js/package.json.js` also exports the parsed `chords/` tree as `chords`.
+        plugins: [packageChordsPlugin({ root, vendor: options?.vendor })],
         copy: options?.vendor?.flatMap((packageName) => {
           return [
             { from: `node_modules/${packageName}/js`, to: `js/${packageName}` },

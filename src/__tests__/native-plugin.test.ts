@@ -77,6 +77,19 @@ test("bundles a lazy native require in TypeScript and preserves its matching run
   expect((await execute(process.execPath, [script])).stdout.trim()).toBe("function");
 });
 
+test("ships the shared accessibility runtime beside the addon for dynamic loading", async () => {
+  const options = await fixture();
+  await writeFile(
+    path.join(options.root, "target", ARM, "tray/libAXorcistRuntime.dylib"),
+    "shared accessibility runtime",
+  );
+  await bundle(options);
+  const binary = await addonFile(options.root, ARM);
+  expect(await readFile(path.join(path.dirname(binary), "libAXorcistRuntime.dylib"), "utf8")).toBe(
+    "shared accessibility runtime",
+  );
+});
+
 test("keeps architectures and addon runtimes separate and selects at runtime", async () => {
   const options = await fixture([ARM, INTEL], ["tray", "menu"]);
   const code = await bundle(options);
