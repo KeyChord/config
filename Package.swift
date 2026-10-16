@@ -31,7 +31,7 @@ let package = Package(
                 .product(name: "AXorcist", package: "AXorcist"),
                 .product(name: "Logging", package: "swift-log"),
             ],
-            path: "swift/AXorcistRuntime/Sources/AXorcistRuntime"
+            path: "swift/AXorcistRuntime"
         ),
         .target(
             name: "ChordNodeSupport",
