@@ -47,6 +47,11 @@ file never collides with a sibling folder. Vendored packages appear where `vendo
 (`chords["@keychord"]["chords-menu"].chords["macos.toml"]`), read from `node_modules` because the
 copy runs after bundling. The source `package.json` is never modified. Invalid TOML fails the build.
 
+Symbol-prefixed global chords and their hints must be defined in each package's root
+`chords/macos.toml`, alongside any handlers they use. Builds fail with the chord key and source
+file when a global binding appears elsewhere, including in shared or nested application files.
+Vendored packages keep their own root `chords/macos.toml`.
+
 `packageChordsPlugin({ root, vendor })` is exported for custom builds.
 
 ## Compiling a package

@@ -48,6 +48,20 @@ export function packageChordsPlugin(options: PackageChordsPluginOptions = {}): P
         } catch (error) {
           this.error(`[chord-package] failed to parse ${file}: ${(error as Error).message}`);
         }
+        // Each vendored package keeps its own root chords/macos.toml.
+        const vendor = options.vendor?.find((name) => relative.startsWith(`${name}/chords/`));
+        const packageRelative = (
+          vendor ? relative.slice(`${vendor}/chords/`.length) : relative
+        ).replace(/^(?:@[^/]+\/[^/]+\/chords\/)+/, "");
+        if (packageRelative !== "macos.toml") {
+          for (const key of Object.keys(data.chords ?? {})) {
+            if (isGlobalBinding(key)) {
+              this.error(
+                `[chord-package] global chord ${JSON.stringify(key)} in ${file} must be defined in the package's root chords/macos.toml`,
+              );
+            }
+          }
+        }
         const segments = relative.split("/");
         let directory = chords;
         for (const segment of segments.slice(0, -1)) {
@@ -60,6 +74,14 @@ export function packageChordsPlugin(options: PackageChordsPluginOptions = {}): P
       return { code: JSON.stringify({ ...packageJson, chords }), moduleType: "json" };
     },
   };
+}
+
+function isGlobalBinding(key: string): boolean {
+  const hint = key.startsWith("?");
+  const sequence = hint ? key.slice(1) : key;
+  // An initial quoted or parenthesized hint range represents letters/digits, not a symbol.
+  if (hint && /^(?:"[a-z0-9]-[a-z0-9]"|\([a-z0-9]-[a-z0-9]\))$/.test(sequence)) return false;
+  return /^[^\p{L}\p{N}]/u.test(sequence);
 }
 
 /** Map each `.toml` file under `directory` from its `/`-joined path within `chords/`. */
