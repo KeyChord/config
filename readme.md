@@ -1,5 +1,29 @@
 # @keychord/config
 
+> [!NOTE]
+> This document is largely AI-written, so parts of it may not be fully accurate. It will be replaced with a hand-written version when I get the time.
+
+The build config for [Chord](https://github.com/KeyChord/Chord) packages. A chord package's
+`vite.config.ts` exports `config()`, and `vp pack` ([Vite+](https://viteplus.dev)) then builds
+what Chord loads from the package:
+
+- every `src/js/<name>.ts` handler into a self-contained `js/<name>.js`. All imports are bundled
+  in except `chord`, `bun:*`, `node:*` and vendored packages.
+- `package.json` into `js/package.json.js`, with the parsed `chords/` tree added
+- copies of vendored chord packages under `js/`, `chords/` and `target/`
+- NodeSwift add-ons from the package's root `Package.swift`, if it has one
+
+The chord packages in [KeyChord/chords](https://github.com/KeyChord/chords) are built with it.
+
+## Install
+
+```sh
+bun add -d @keychord/config vite-plus
+```
+
+`vite-plus` provides the `vp` CLI, which you can run with `bunx vp`. You can also install Vite+
+globally with `curl -fsSL https://vite.plus | bash`.
+
 ## Usage
 
 ```ts
@@ -8,10 +32,15 @@ import { config } from "@keychord/config";
 export default config();
 ```
 
-The config only builds packages. Chord runs handlers under Bun, so packages test with `bun test`
-and the `@keychord/chordtest` preload (configured in their `bunfig.toml`), which provides the
-mockable `chord` module and package-bound `import.meta.chord` helpers. Production bundles keep the
-real host API.
+Put each handler in `src/js/<name>.ts` (top-level `.ts` files only) and run `vp pack`, or
+`vp pack --watch` to rebuild on changes. Chord loads the built `js/` folder, not `src/`, so commit
+`js/` with the package.
+
+The config only builds packages. Chord runs handlers under Bun, so test them with `bun test`.
+Packages in KeyChord/chords use that repository's `@keychord/chordtest` preload (configured in
+their `bunfig.toml`), which provides the mockable `chord` module and package-bound
+`import.meta.chord` helpers. `@keychord/chordtest` is a private workspace package and isn't
+published to npm. Production bundles keep the real host API.
 
 Pass options when the package needs additional build settings:
 
@@ -21,12 +50,16 @@ export default config({
   vendor: [
     // an array of chord packages used in this package
   ],
+  plugins: [
+    // extra Vite plugins
+  ],
+  // native: { ... }, see "Native add-ons" below
 });
 ```
 
-The chords workspace links `@keychord/config` to this checkout. Run `vp pack` here after changing
-the config, because consumers load its built `exports/` entry. Run this package's own tests with
-`vp run test` (`bun test`).
+Vendored packages are copied from `node_modules`, so install them first. The official chord
+packages aren't published to npm; install them from GitHub instead, for example
+`bun add -d github:KeyChord/chords-menu`.
 
 ## `js/package.json.js`
 
@@ -85,8 +118,9 @@ Sources/KeychordChordsMenuNativeMenu/menu.swift
   -> target/aarch64-apple-darwin/menu/{menu.node,libNodeAPI.dylib,libAXorcistRuntime.dylib}
 ```
 
-The add-on filename is the product name with its package prefix stripped, so the long, globally
-unique Swift module name `KeychordChordsMenuNativeMenu` is written as `menu.node`. Module names
+The add-on filename is the part of the product name after its last `Native`, with the first letter
+lowercased (a product name without `Native<Name>` is used whole), so the long, globally unique
+Swift module name `KeychordChordsMenuNativeMenu` is written as `menu.node`. Module names
 must stay unique across every chord package loaded into one Chord process: NodeAPI is linked
 dynamically precisely so several add-ons can coexist, and two products sharing a module name would
 register duplicate Swift/Objective-C classes.
@@ -213,9 +247,19 @@ handlers using `import.meta.chord.resolveNative` still resolve through the vendo
 `buildNative(root, options)`, `discoverNativeTargets(root)`, `addonName(module)`, `hostTriple()`,
 `hasNativeManifest(root)`, `manifestPath(root)` and `nativeSourceDirs(root)` are exported for
 custom scripts. `nativeAddonPlugin({ root, triples, targetDir })` is exported for custom
-Vite/Rolldown builds. See Chord's `scripting.md` for the complete authoring contract.
+Vite/Rolldown builds. See Chord's [`scripting.md`](https://github.com/KeyChord/Chord/blob/dev/scripting.md#native-code)
+for the complete authoring contract.
 
-## Publishing this package
+## Development
+
+This repository uses Vite+ with pnpm (`packageManager` in `package.json`): install dependencies
+with `vp install`, build `exports/` with `vp pack`, and run the tests with `vp run test`
+(`bun test --isolate`).
+
+The KeyChord/chords workspace links `@keychord/config` to a sibling checkout of this repository.
+Run `vp pack` here after changing the config, because consumers load its built `exports/` entry.
+
+### Publishing this package
 
 `pnpm pack` and `pnpm publish` run the `prepack` lifecycle automatically. It rebuilds the package
 with `vp pack` and verifies that the runtime export points to compiled JavaScript, its declaration
