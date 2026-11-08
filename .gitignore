@@ -6,3 +6,4 @@ exports
 .build
 .swiftpm
 /Package.resolved
+.claude/settings.local.json
