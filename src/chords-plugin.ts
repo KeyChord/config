@@ -14,6 +14,9 @@ export type PackageChordsPluginOptions = {
 export type ChordsTree = { [name: string]: ChordsTree | Record<string, unknown> };
 
 const CHORDS_DIR = "chords";
+// Chord always loads this file, so its hints can describe global keys that no package owns.
+const CORE_PACKAGE = "@keychord/chords-chord";
+const CORE_FILE = "com/leonsilicon/chord/macos.toml";
 
 /** Add a `chords` property with the package's parsed `chords/` tree to its bundled `package.json`. */
 export function packageChordsPlugin(options: PackageChordsPluginOptions = {}): Plugin {
@@ -37,6 +40,7 @@ export function packageChordsPlugin(options: PackageChordsPluginOptions = {}): P
         );
       }
 
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
       const chords: ChordsTree = {};
       // Sorted so the emitted key order doesn't depend on the filesystem's listing order.
       for (const relative of [...files.keys()].sort()) {
@@ -54,7 +58,9 @@ export function packageChordsPlugin(options: PackageChordsPluginOptions = {}): P
           vendor ? relative.slice(`${vendor}/chords/`.length) : relative
         ).replace(/^(?:@[^/]+\/[^/]+\/chords\/)+/, "");
         if (packageRelative !== "macos.toml") {
+          const isCoreFile = packageJson.name === CORE_PACKAGE && relative === CORE_FILE;
           for (const key of Object.keys(data.chords ?? {})) {
+            if (isCoreFile && key.startsWith("?")) continue;
             if (isGlobalBinding(key)) {
               this.error(
                 `[chord-package] global chord ${JSON.stringify(key)} in ${file} must be defined in the package's root chords/macos.toml`,
@@ -70,7 +76,6 @@ export function packageChordsPlugin(options: PackageChordsPluginOptions = {}): P
         directory[segments[segments.length - 1]!] = data;
       }
 
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
       return { code: JSON.stringify({ ...packageJson, chords }), moduleType: "json" };
     },
   };

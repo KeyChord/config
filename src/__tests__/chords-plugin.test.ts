@@ -143,6 +143,41 @@ file = 'monitor.js'
   expect(pkg.chords["macos.toml"].on.monitor).toEqual({ file: "monitor.js" });
 });
 
+const CORE_FILE = "chords/com/leonsilicon/chord/macos.toml";
+const CORE_MANIFEST = '{"name":"@keychord/chords-chord","type":"module"}';
+
+test("allows symbol-prefixed hints in the core package's core file", async () => {
+  const pkg = await bundle(
+    await fixture({
+      "package.json": CORE_MANIFEST,
+      [CORE_FILE]: "name = 'Chords'\n[chords]\n'?/' = { name = 'Launch' }\n",
+    }),
+  );
+  expect(pkg.chords.com.leonsilicon.chord["macos.toml"].chords).toHaveProperty("?/");
+});
+
+test.each([
+  ["a global chord in the core file", CORE_MANIFEST, CORE_FILE, "/f"],
+  [
+    "a hint elsewhere in the core package",
+    CORE_MANIFEST,
+    "chords/com/example/App/macos.toml",
+    "?/",
+  ],
+  [
+    "a hint at the core path of another package",
+    '{"name":"other","type":"module"}',
+    CORE_FILE,
+    "?/",
+  ],
+])("still rejects %s", async (_, manifest, file, key) => {
+  const root = await fixture({
+    "package.json": manifest,
+    [file]: `name = 'Misplaced'\n[chords]\n'${key}' = { name = 'Global' }\n`,
+  });
+  await expect(bundle(root)).rejects.toThrow(`global chord ${JSON.stringify(key)}`);
+});
+
 test.each(["@keychord/chords-menu", "chords-menu"])(
   "allows %s globals in its vendored root but rejects its nested globals",
   async (vendor) => {

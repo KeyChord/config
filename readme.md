@@ -82,7 +82,8 @@ copy runs after bundling. The source `package.json` is never modified. Invalid T
 Symbol-prefixed global chords and their hints must be defined in each package's root
 `chords/macos.toml`, alongside any handlers they use. Builds fail with the chord key and source
 file when a global binding appears elsewhere, including in shared or nested application files.
-Vendored packages keep their own root `chords/macos.toml`.
+Vendored packages keep their own root `chords/macos.toml`. The one exception is hints in
+`@keychord/chords-chord`'s `chords/com/leonsilicon/chord/macos.toml`, which Chord always loads.
 
 `packageChordsPlugin({ root, vendor })` is exported for custom builds.
 
